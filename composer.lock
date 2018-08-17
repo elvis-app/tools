@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c7c43ed8ea2fc5b5c2e072c7db858a28",
+    "content-hash": "841f4f9422c0a9670dde06dd0015632f",
     "packages": [
         {
             "name": "dnoegel/php-xdg-base-dir",
@@ -896,6 +896,42 @@
                 "storage"
             ],
             "time": "2018-05-07T08:44:23+00:00"
+        },
+        {
+            "name": "mervick/curl-helper",
+            "version": "v1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/mervick/curl-helper.git",
+                "reference": "64cb70b8d1211b8d1179b309b7177cbc8eccde1a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/mervick/curl-helper/zipball/64cb70b8d1211b8d1179b309b7177cbc8eccde1a",
+                "reference": "64cb70b8d1211b8d1179b309b7177cbc8eccde1a",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.4.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-0": {
+                    "CurlHelper": ""
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Andrey Izman",
+                    "email": "izman.dev@gmail.com"
+                }
+            ],
+            "description": "PHP Curl Helper",
+            "time": "2016-04-28T22:37:39+00:00"
         },
         {
             "name": "monolog/monolog",
