@@ -23,7 +23,7 @@ class SyncEsDataToLocal extends Command {
     protected $indexTypeName = '';
 
     protected $source      = '';
-    protected $destination = '';
+    protected $dst = '';
 
     /**
      * Create a new command instance.
@@ -33,7 +33,7 @@ class SyncEsDataToLocal extends Command {
     public function __construct() {
 
         $this->source = config('elasticsearch')['connections']['es_3']['hosts'][0];
-        $this->description = config('elasticsearch')['connections']['es_1']['hosts'][0];
+        $this->dst = config('elasticsearch')['connections']['es_1']['hosts'][0];
         parent::__construct();
     }
 
@@ -49,7 +49,7 @@ class SyncEsDataToLocal extends Command {
             $this->error('来源es地址配置为空');
             exit;
         }
-        if (empty($this->description)) {
+        if (empty($this->dst)) {
             $this->error('目的es地址配置为空');
             exit;
         }
@@ -82,7 +82,7 @@ class SyncEsDataToLocal extends Command {
             $list .= json_encode(["index" => ["_id" => $hit->_id]], JSON_UNESCAPED_UNICODE) . "\n";
             $list .= json_encode($hit->_source, JSON_UNESCAPED_UNICODE) . "\n";
         }
-        $success = CurlHelper::factory("http://{$this->description}/{$this->indexTypeName}/_bulk")
+        $success = CurlHelper::factory("http://{$this->dst}/{$this->indexTypeName}/_bulk")
             ->setPostRaw($list)->setHeaders(['Content-Type' => 'application/x-ndjson'])->exec();
         if (!empty($success['data']) && $success['status'] == 200) {
             $success = json_decode(json_encode($success['data']));

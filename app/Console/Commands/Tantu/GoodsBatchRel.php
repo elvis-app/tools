@@ -45,7 +45,7 @@ class GoodsBatchRel extends Command {
      * 是否开启缓存
      * @var bool
      */
-    protected $cache = false;
+    protected $cache = true;
 
     /**
      * 处理信息
@@ -60,7 +60,7 @@ class GoodsBatchRel extends Command {
      * @return void
      */
     public function __construct() {
-        $this->esHandle = ClientBuilder::fromConfig(config('elasticsearch')['connections']['es_1']);
+        $this->esHandle = ClientBuilder::fromConfig(config('elasticsearch')['connections']['es_3']);
         $this->processInfo = array_fill_keys([
             'poi_valid_count',  //poi有效数量，也就是匹配上商品的数量
             'poi_invalid_count', //poi无效数量，也就是匹配不上商品的数量
