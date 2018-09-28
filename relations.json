@@ -5,33 +5,8 @@
                 "poi_id": {
                     "type": "integer"
                 },
-                "poi_name": {
-                    "properties": {
-                        "en": {
-                            "properties": {
-                                "language": {
-                                    "type": "keyword"
-                                },
-                                "value": {
-                                    "type": "text",
-                                    "analyzer": "english",
-                                    "search_analyzer": "ik_syno_max"
-                                }
-                            }
-                        },
-                        "zh": {
-                            "properties": {
-                                "language": {
-                                    "type": "keyword"
-                                },
-                                "value": {
-                                    "type": "text",
-                                    "analyzer": "ik_max_word",
-                                    "search_analyzer": "ik_syno_max"
-                                }
-                            }
-                        }
-                    }
+                "poi_type": {
+                    "type": "keyword"
                 }
             }
         },
@@ -40,16 +15,23 @@
                 "goods_id": {
                     "type": "integer"
                 },
-                "match_type": {
+                "goods_update_time": {
+                    "type": "date",
+                    "format": "epoch_millis"
+                },
+                "is_accurate": {
                     "type": "integer"
+                },
+                "score": {
+                    "type": "double"
                 }
             }
         },
-        "region_name": {
-            "type": "keyword"
+        "region_id": {
+            "type": "integer"
         },
-        "city_name": {
-            "type": "keyword"
+        "city_id": {
+            "type": "integer"
         },
         "es_update_time": {
             "type": "date",

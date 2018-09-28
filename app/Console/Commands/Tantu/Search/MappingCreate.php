@@ -18,7 +18,7 @@ class MappingCreate extends Command {
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = '生成es mapping';
 
     /**
      * Create a new command instance.
@@ -42,6 +42,7 @@ class MappingCreate extends Command {
             return;
         }
         call_user_func([$this, $type]);
+        $this->info('生成成功');
     }
 
     /**
@@ -56,26 +57,19 @@ class MappingCreate extends Command {
                 'poi_info'       => [
                     'properties' => [
                         'poi_id'   => Base::baseTypeStruct('integer'),
-                        'poi_name' => Base::multiLanguageStruct(['en', 'zh'], true, [], [
-                            'en' => [
-                                'search_analyzer' => 'ik_syno_max',
-                                'analyzer'        => 'english',
-                            ],
-                            'zh' => [
-                                'search_analyzer' => 'ik_syno_max',
-                                'analyzer'        => 'ik_max_word',
-                            ],
-                        ]),
+                        'poi_type' => Base::baseTypeStruct('keyword'),
                     ],
                 ],
                 'goods_info'     => [
                     'properties' => [
-                        'goods_id'   => Base::baseTypeStruct('integer'),
-                        'match_type' => Base::baseTypeStruct('integer'),
+                        'goods_id'          => Base::baseTypeStruct('integer'),
+                        'goods_update_time' => Base::epochMillisDate(),
+                        'is_accurate'    => Base::baseTypeStruct('integer'),
+                        'score'          => Base::baseTypeStruct('double'),
                     ],
                 ],
-                'region_name'    => Base::baseTypeStruct('keyword'),
-                'city_name'      => Base::baseTypeStruct('keyword'),
+                'region_id'      => Base::baseTypeStruct('integer'),
+                'city_id'        => Base::baseTypeStruct('integer'),
                 'es_update_time' => Base::epochMillisDate(),
             ],
         ];

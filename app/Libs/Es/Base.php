@@ -2,7 +2,7 @@
 /**
  * @datetime  2018/6/6 22:12
  * @author    fangjainwei
- * @copyright www.zuzuche.com
+ * @copyright www.weicut.com
  */
 
 declare(strict_types = 1);//默认严格模式
