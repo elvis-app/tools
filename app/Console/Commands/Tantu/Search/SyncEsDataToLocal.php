@@ -4,14 +4,14 @@ namespace App\Console\Commands\Tantu\Search;
 
 use Illuminate\Console\Command;
 use CurlHelper;
-
+ini_set('memory_limit', '-1');
 class SyncEsDataToLocal extends Command {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'tantu:sync:es {name}';
+    protected $signature = 'tantu:Sync:Es {name}';
 
     /**
      * The console command description.

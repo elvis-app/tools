@@ -11,7 +11,7 @@ class PoiGoodsSync extends Command {
      *
      * @var string
      */
-    protected $signature = 'tantu:sync:poiGoodsSync';
+    protected $signature = 'tantu:Sync:PoiGoodsSync';
 
     /**
      * The console command description.

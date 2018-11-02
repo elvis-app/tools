@@ -1,0 +1,32 @@
+{
+    "analysis": {
+        "filter": {
+            "unique_stem_filter": {
+                "type": "unique",
+                "only_on_same_position": "true"
+            },
+            "my_ik_synonym_filter": {
+                "type": "synonym",
+                "synonyms_path": "analysis-ik\/config\/synonyms.txt"
+            }
+        },
+        "analyzer": {
+            "ik_syno_max": {
+                "filter": [
+                    "my_ik_synonym_filter",
+                    "unique"
+                ],
+                "type": "custom",
+                "tokenizer": "ik_max_word"
+            },
+            "ik_syno_smart": {
+                "filter": [
+                    "my_ik_synonym_filter",
+                    "unique"
+                ],
+                "type": "custom",
+                "tokenizer": "ik_smart"
+            }
+        }
+    }
+}

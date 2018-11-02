@@ -186,18 +186,12 @@ class GoodsBatchRel extends Command {
                     foreach ($info['poi_info'] as $poiInfo) {
                         if ($poiInfo['goods_id'] <= 0) continue;
                         $save[] = [
-                            'region_id'   => $info['region_id'],
-                            'region_cn'   => $info['region_cn'],
-                            'city_id'     => $info['city_id'],
-                            'city_cn'     => $info['city_cn'],
                             'poi_id'      => $info['id'],
-                            'poi_name'    => $info['cn_name'],
                             'goods_id'    => $poiInfo['goods_id'],
-                            'goods_name'  => $poiInfo['goods_name'],
                             'poi_type'    => $tableName,
-                            'score'       => $poiInfo['score'],
-                            'status'      => $poiInfo['status'],
                             'is_accurate' => $poiInfo['is_accurate'],
+                            'add_time'    => max(intval($poiInfo['add_time'] / 1000), 0),
+                            'update_time' => max(intval($poiInfo['update_time'] / 1000), 0),
                         ];
                     }
                 }
@@ -262,7 +256,7 @@ class GoodsBatchRel extends Command {
                 ],
                 'from'    => 0,
                 'size'    => 3000,
-                '_source' => ['goods_id', 'goods_info.status', 'goods_info.goods_name.zh.value'],
+                '_source' => ['goods_id', 'goods_info.status', 'goods_info.goods_name.zh.value', 'goods_info.add_time', 'goods_info.update_time'],
             ],
         ];
         $poiData = $this->esHandle->search($params);
@@ -272,10 +266,10 @@ class GoodsBatchRel extends Command {
                 if (empty($poi['_source']['goods_id'])) continue;
                 if ($poi['_source']) {
                     $data[$poi['_source']['goods_id']] = [
-                        'goods_id'   => $poi['_source']['goods_id'],
-                        'goods_name' => $poi['_source']['goods_info']['goods_name']['zh']['value'][0],
-                        'status'     => $poi['_source']['goods_info']['status'],
-                        'score'      => $poi['_score'],
+                        'goods_id'    => $poi['_source']['goods_id'],
+                        'goods_name'  => $poi['_source']['goods_info']['goods_name']['zh']['value'][0],
+                        'add_time'    => $poi['_source']['goods_info']['add_time'],
+                        'update_time' => $poi['_source']['goods_info']['update_time'],
                     ];
                 }
             }

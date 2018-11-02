@@ -10,7 +10,7 @@ class StatGatewayNum extends Command {
      *
      * @var string
      */
-    protected $signature = 'tantu:api:statGatewayNum {dir}';
+    protected $signature = 'tantu:Api:StatGatewayNum {dir}';
 
     /**
      * The console command description.
