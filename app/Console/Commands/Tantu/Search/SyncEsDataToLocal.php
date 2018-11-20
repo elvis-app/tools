@@ -55,7 +55,7 @@ class SyncEsDataToLocal extends Command {
         }
 
         $this->indexTypeName = $name;
-
+        $next = null;
         $hits = $this->get_first(1000, $next);
         if (empty($hits)) {
             return;

@@ -11,7 +11,8 @@
         "laravel/tinker": "^1.0",
         "elasticsearch/elasticsearch":"v6.0.*",
         "mervick/curl-helper": "^1.1",
-        "league/csv":"^9.0"
+        "league/csv":"^9.0",
+        "predis/predis":"v1.1.1"
     },
     "require-dev": {
         "filp/whoops": "^2.0",
