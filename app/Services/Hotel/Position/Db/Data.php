@@ -248,7 +248,7 @@ class Data extends BaseService {
      * @author  fangjianwei
      * @return int
      */
-    public function getEanCityTotal(): int {
+    public function getEanCityTotal() :int{
         return $this->db->table('region_descendant_tbl_cn')
             ->where([
                 ['r_type', 'city'],
