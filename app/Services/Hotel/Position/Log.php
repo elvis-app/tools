@@ -27,10 +27,22 @@ class Log extends BaseService {
     protected static $infoData = [];
 
 
-    public function saveErrorLog(): void {
+    public static function saveErrorLog(): void {
+        if(empty(self::$errorData)) return;
+        $fp = fopen('dispose_error.csv', 'w+');
+        foreach(self::$errorData as $error){
+            fputcsv($fp, array_values($error));
+        }
+        fclose($fp);
     }
 
-    public function saveInfoLog(): void {
+    public static function saveInfoLog(): void {
+        if(empty(self::$infoData)) return;
+        $fp = fopen('dispose_info.csv', 'w+');
+        foreach(self::$infoData as $info){
+            fputcsv($fp, array_values($info));
+        }
+        fclose($fp);
     }
 
     /**
@@ -53,7 +65,6 @@ class Log extends BaseService {
      * @param string $message
      */
     public static function setError(array $data, string $message): void {
-//        var_dump($message);
         self::$errorData[] = [
             'message' => $message,
             'id'      => $data['id'],

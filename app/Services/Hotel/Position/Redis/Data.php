@@ -57,6 +57,9 @@ class Data extends BaseService {
      */
     protected static $eanProvinceIndex = [];
 
+
+
+
     /**
      * 加载周边数据
      * @author  fangjianwei
@@ -108,7 +111,7 @@ class Data extends BaseService {
      * @return bool
      * @throws \Exception
      */
-    public static function loadZzcCity():bool{
+    public static function loadZzcCity(): bool {
         /** @var Position $positionDb */
         $positionDb = app()->make(Position::class);
         self::$zzcCity = $positionDb->getZzcCity();
@@ -121,29 +124,21 @@ class Data extends BaseService {
      * @author  fangjianwei
      * @return bool
      */
-    public static function buildZzcCityIndex():bool{
-        if(empty(self::$zzcCity)) return false;
-        foreach(self::$zzcCity as $index => $city){
+    public static function buildZzcCityIndex(): bool {
+        if (empty(self::$zzcCity)) return false;
+        foreach (self::$zzcCity as $index => $city) {
 
             //建立国家ID、城市中文名、省中文名联合索引
-            self::$zzcCityIndex[
-                self::buildIndex((int)$city['region'], $city['city_cn'], $city['state_cn'])
-            ][] = $index;
+            self::$zzcCityIndex[self::buildIndex([(int)$city['region'], $city['city_cn'], $city['state_cn']])][] = $index;
 
             //建立国家ID、城市英文名、省英文名联合索引
-            self::$zzcCityIndex[
-            self::buildIndex((int)$city['region'], $city['city_en'], $city['state_en'])
-            ][] = $index;
+            self::$zzcCityIndex[self::buildIndex([(int)$city['region'], $city['city_en'], $city['state_en']])][] = $index;
 
             //建立国家ID。城市中文名联合索引
-            self::$zzcCityIndex[
-            self::buildIndex((int)$city['region'], $city['city_cn'])
-            ][] = $index;
+            self::$zzcCityIndex[self::buildIndex([(int)$city['region'], $city['city_cn']])][] = $index;
 
             //建立国家ID。城市英文名联合索引
-            self::$zzcCityIndex[
-            self::buildIndex((int)$city['region'], $city['city_en'])
-            ][] = $index;
+            self::$zzcCityIndex[self::buildIndex([(int)$city['region'], $city['city_en']])][] = $index;
 
         }
         return true;
@@ -168,17 +163,15 @@ class Data extends BaseService {
      * @author  fangjianwei
      * @return bool
      */
-    public static function buildProvinceIndex():bool{
-        if(empty(self::$eanProvince)) return false;
-        foreach(self::$eanProvince as $index => $province){
-            if(empty($province['r_city_list'])) continue;
+    public static function buildProvinceIndex(): bool {
+        if (empty(self::$eanProvince)) return false;
+        foreach (self::$eanProvince as $index => $province) {
+            if (empty($province['r_city_list'])) continue;
             $cityIds = explode(',', $province['r_city_list']);
 
-            foreach($cityIds as $cityId){
+            foreach ($cityIds as $cityId) {
                 //建立国家ID。城市ID联合索引
-                self::$eanProvinceIndex[
-                self::buildIndex((int)$province['region_id'], (int)$cityId)
-                ][] = $index;
+                self::$eanProvinceIndex[self::buildIndex([(int)$province['region_id'], (int)$cityId])][] = $index;
             }
         }
         return true;
@@ -190,7 +183,7 @@ class Data extends BaseService {
      * @param mixed ...$indexName
      * @return string
      */
-    private static function buildIndex(...$indexName):string{
+    private static function buildIndex(array $indexName): string {
         return md5(json_encode($indexName));
     }
 
@@ -212,12 +205,12 @@ class Data extends BaseService {
      * @param array $ids
      * @return array
      */
-    public static function getPeripheralSubByIds(int $regionId, array $ids){
+    public static function getPeripheralSubByIds(int $regionId, array $ids) {
         $data = [];
 
-        foreach($ids as $id){
-            $key = $regionId.'_'.$id;
-            if(!empty(self::$peripheralSubMap[$key])){
+        foreach ($ids as $id) {
+            $key = $regionId . '_' . $id;
+            if (!empty(self::$peripheralSubMap[$key])) {
                 $data[] = self::$peripheralSubMap[$key];
             }
         }
@@ -243,20 +236,19 @@ class Data extends BaseService {
      * @param array $eanCity
      * @return array
      */
-    public static function getEanProvince(array $eanCity):array{
+    public static function getEanProvince(array $eanCity): array {
         //根据国家ID与ean城市ID获取索引值
-        $key = self::buildIndex((int)$eanCity['region_id'], (int)$eanCity['r_id']);
+        $key = self::buildIndex([(int)$eanCity['region_id'], (int)$eanCity['r_id']]);
         $index = self::$eanProvinceIndex[$key] ?? null;
-        if(is_null($index)) return [];
+        if (is_null($index)) return [];
         $index = array_unique($index);
 
         $data = [];
-        foreach($index as $i){
+        foreach ($index as $i) {
             $data[] = self::$eanProvince[$i];
         }
         return $data;
     }
-
 
 
     /**
@@ -272,7 +264,9 @@ class Data extends BaseService {
         }
         if (empty($lists)) return [];
 
-        $data = collect($lists)->transform(function($item) use ($eanCity) {
+        $data = collect($lists)->filter(function($item){
+            return $item['city'] > 0;
+        })->transform(function($item) use ($eanCity) {
             //计算ean与租租车城市经纬度
             $distance = GeoHelper::getDistance(
                 (float)$eanCity['center_latitude'],
@@ -308,7 +302,9 @@ class Data extends BaseService {
         if (empty($lists)) return [];
 
         //多条，只拿城市ID最小的
-        $data = collect($lists)->sortBy('city')->first();
+        $data = collect($lists)->filter(function($item){
+            return $item['city'] > 0;
+        })->sortBy('city')->first();
         return [
             'region'  => $data['region'],
             'city_id' => $data['city'],
@@ -339,7 +335,7 @@ class Data extends BaseService {
     protected static function getZzcCityByNameEn(array $eanCity): array {
         return self::getZzcCityByValues([
             (int)$eanCity['zzc_region_id'],
-            !empty($eanCity['r_name_en']) ? $eanCity['r_name_en'] : $eanCity['r_name_cn']
+            !empty($eanCity['r_name_en']) ? $eanCity['r_name_en'] : $eanCity['r_name_cn'],
         ]);
     }
 
@@ -351,10 +347,11 @@ class Data extends BaseService {
      */
     protected static function getZzcCityByNameStateCn(array $eanCity): array {
         return self::getZzcCityByValues([
-            (int)$eanCity['zzc_region_id'],
-            $eanCity['r_name_cn'],
-            $eanCity['province_info']['name_cn']
-        ]);
+                (int)$eanCity['zzc_region_id'],
+                $eanCity['r_name_cn'],
+                $eanCity['province_info']['name_cn'],
+            ]
+        );
     }
 
     /**
@@ -363,16 +360,15 @@ class Data extends BaseService {
      * @param array $values
      * @return array
      */
-    protected static function getZzcCityByValues($values = []){
-        if(empty($values)) return [];
-        dd(count(self::$peripheralSubMap));
+    protected static function getZzcCityByValues($values) {
+        if (empty($values)) return [];
         $key = self::buildIndex($values);
         $index = self::$zzcCityIndex[$key] ?? null;
-        if(is_null($index)) return [];
+        if (is_null($index)) return [];
         $index = array_unique($index);
 
         $data = [];
-        foreach($index as $i){
+        foreach ($index as $i) {
             $data[] = self::$zzcCity[$i];
         }
         return $data;
@@ -388,7 +384,7 @@ class Data extends BaseService {
         return self::getZzcCityByValues([
             (int)$eanCity['zzc_region_id'],
             !empty($eanCity['r_name_en']) ? $eanCity['r_name_en'] : $eanCity['r_name_cn'],
-            $eanCity['province_info']['name_en']
+            $eanCity['province_info']['name_en'],
         ]);
     }
 }

@@ -58,7 +58,7 @@ abstract class BaseCommonModel {
                 $query = str_replace(array('%', '?'), array('%%', '%s'), $sql->sql);
 
                 $query = vsprintf($query, $sql->bindings);
-                echo $query . PHP_EOL;
+//                echo $query . PHP_EOL;
             }
         );
     }
@@ -148,5 +148,25 @@ abstract class BaseCommonModel {
         $instance = $this->db->table($this->tableName);
         $instance = is_string($where) ? $instance->whereRaw($where) : $instance->where($where);
         return $instance->delete();
+    }
+
+    /**
+     * @author  fangjianwei
+     * @param $data
+     * @return bool
+     */
+    public function insert($data):bool{
+        $instance = $this->db->table($this->tableName);
+        return $instance->insert($data);
+    }
+
+    /**
+     * @author  fangjianwei
+     * @param $data
+     * @return bool
+     */
+    public function replace($data):bool{
+        $instance = $this->db->table($this->tableName);
+        return $instance->updateOrInsert($data);
     }
 }

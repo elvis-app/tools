@@ -5,6 +5,8 @@ namespace App\Console\Commands\Hotel;
 use Illuminate\Console\Command;
 use App\Services\Hotel\Position\Redis\Data;
 use App\Services\Hotel\Position\Log;
+use App\Models\MysqlDb\PositionDisposeDb\ean_city_tbl;
+use CurlHelper;
 
 class PositionDispose extends Command {
     /**
@@ -23,8 +25,8 @@ class PositionDispose extends Command {
 
     protected $db;
 
-    protected $errorData;
-    protected $infoData;
+    protected $apiData = [];
+
 
     /**
      * Create a new command instance.
@@ -39,8 +41,7 @@ class PositionDispose extends Command {
      * @author  fangjianwei
      * @throws \Exception
      */
-    public function handle() {
-
+    protected function init(){
         //加载周边数据
         $this->info('加载ean周边数据...');
         if (!Data::loadPeripheral()) {
@@ -89,7 +90,18 @@ class PositionDispose extends Command {
             $this->error('对城市表数据建立索引失败！');
             exit;
         }
+    }
 
+    /**
+     * @author  fangjianwei
+     * @throws \Exception
+     */
+    public function handle() {
+
+        $this->init();
+        $this->info('开始处理数据...');
+
+        $insertData = [];
         foreach (Data::getPeripheral() as $data) {
             if (empty($data['r_city_list'])) {
                 Log::setError($data, '下属城市列表为空');
@@ -100,201 +112,255 @@ class PositionDispose extends Command {
             $subLists = Data::getPeripheralSubByIds((int)$data['region_id'], $subIds);
             if (empty($subLists)) {
                 Log::setError($data, '下属城市列表不为空，但找不到数据');
+                continue;
             }
             //检查缺失的下属城市id
             $lostIds = array_diff($subIds, array_column($subLists, 'r_id'));
             if (!empty($lostIds)) {
                 Log::setError($data, "下属城市ID找不到数据：" . implode(',', $lostIds));
             }
-            $this->disposeCity($subLists);
+            $result = $this->disposeCity($data, $subLists);
+            if (!empty($result)) {
+                $insertData = array_merge($insertData, $result);
+            }
+
+            //处理周边本身城市的匹配
+            $data['temp_name_cn'] = $data['r_name_cn'];
+            $newName = str_replace(mb_substr($data['temp_name_cn'], mb_strpos($data['temp_name_cn'], '('), mb_strrpos($data['temp_name_cn'], ')')), '', $data['temp_name_cn']);
+            $newName = trim($newName);
+            $data['r_name_cn'] = $newName;
+            $data['r_name_en'] =  trim($data['r_name_en']);
+            $result = $this->searchCity($data);
+            if (!empty($result)) {
+                $insertData[] = $result;
+            }else{
+                $this->apiData[] = $data;
+            }
         }
+//        //通过接口补数据
+//        $result = $this->getPoiCityByApi();
+//        if(!empty($result)){
+//            $insertData = array_merge($insertData, $result);
+//        }
+        if (empty($insertData)) {
+            $this->error('没有匹配到数据');
+            return;
+        }
+        $unique = [];
+        foreach ($insertData as $key => $val) {
+            $uni = $val['region_id'] . '_' . $val['r_id'] . '_' . $val['r_type'];
+            if (array_key_exists($uni, $unique)) {
+
+                if (!empty($val['vicinity_id']) && !empty($insertData[$unique[$uni]]['vicinity_id'])) {
+                    $a = explode(',', $insertData[$unique[$uni]]['vicinity_id']);
+                    if (array_search($val['vicinity_id'], $a) === false) {
+                        $a[] = $val['vicinity_id'];
+                        $insertData[$unique[$uni]]['vicinity_id'] = implode(',', $a);
+                    }
+                }
+                unset($insertData[$key]);
+                continue;
+            }
+            $unique[$uni] = $key;
+        }
+        $insertData = array_values($insertData);
+
+        $total = count($insertData);
+        $limit = 100;
+        $maxPage = ceil($total / $limit);
+        $bar = $this->output->createProgressBar($maxPage);
+
+        for ($i = 0; $i < $maxPage; $i++) {
+            $data = array_slice($insertData, $i * $limit, $limit);
+            if (empty($data)) continue;
+            $this->insertData($data);
+            $bar->advance(1);
+        }
+        $this->info('正在写日志...');
+        Log::saveErrorLog();
+        Log::saveInfoLog();
+        $this->info('done...');
     }
 
 
-    protected function disposeCity(array $subLists) {
-        if (empty($subLists)) return;
+    /**
+     * @author  fangjianwei
+     * @param array $data
+     * @param array $subLists
+     * @return array
+     */
+    protected function disposeCity(array $data, array $subLists) {
+        if (empty($subLists)) return [];
+        $data = collect($subLists)->transform(function($item) use ($data) {
+            $item['r_name_cn'] = trim($item['r_name_cn']);
+            $Item['r_name_en'] = trim($item['r_name_en']);
+            $item['vicinity_id'] = $data['r_id'];
+            return $this->searchCity($item);
+        })->filter()->values()->toArray();
+        return $data;
+    }
 
-        $data = collect($subLists)->transform(function($item) {
-            //查找与租租车关联的国家数据
-            $eanZzcRegion = Data::getEanZzcRegionByEanRegion((int)$item['region_id']);
-            if (empty($eanZzcRegion)) {
-                Log::setError($item, '找不到ean与租租车关联国家信息，不执行此条数据');
+    /**
+     * 查询城市
+     * @author  fangjianwei
+     * @param array $item
+     * @return array|null
+     */
+    protected function searchCity(array $item) {
+        //查找与租租车关联的国家数据
+
+        $eanZzcRegion = Data::getEanZzcRegionByEanRegion((int)$item['region_id']);
+        if (empty($eanZzcRegion)) {
+            Log::setError($item, '找不到ean与租租车关联国家信息，不执行此条数据');
+            return null;
+        }
+        $item['zzc_region_id'] = $eanZzcRegion['region_id'];
+        $item['province_name'] = [];
+        //查找省名称
+        $eanProvinceLists = Data::getEanProvince($item);
+        if (empty($eanProvinceLists)) {
+            Log::setInfo($item, '找不到省数据，执行第二种方案');
+        } else {
+            //如果多个省，则忽略
+            if (count($eanProvinceLists) > 1) {
+                Log::setError($item, '存在多条省数据，不执行此条数据');
                 return null;
             }
-            $item['zzc_region_id'] = $eanZzcRegion['region_id'];
-            $item['province_name'] = [];
-            //查找省名称
-            $eanProvinceLists = Data::getEanProvince($item);
-            if (empty($eanProvinceLists)) {
-                Log::setInfo($item, '找不到省数据，执行第二种方案');
-            } else {
-                //如果多个省，则忽略
-                if (count($eanProvinceLists) > 1) {
-                    Log::setError($item, '存在多条省数据，不执行此条数据');
-                    return null;
-                }
-                $eanProvince = current($eanProvinceLists);
-                $item['province_info'] = [
-                    'r_id'    => $eanProvince['r_id'],
-                    'name_cn' => $eanProvince['r_name_cn'],
-                    'name_en' => $eanProvince['r_name_en'],
-                ];
-            }
-            if (!empty($item['province_info'])) {
-                //执行第一种方案：带省信息
-                $poiCity = Data::getZzcCityByNameState($item);
-                if (empty($poiCity)) {
-                    //执行第二种方案：不带省信息
-                    $poiCity = Data::getZzcCityByName($item);
-                }
-            } else {
+            $eanProvince = current($eanProvinceLists);
+
+            $item['province_info'] = [
+                'r_id'    => $eanProvince['r_id'],
+                'name_cn' => $eanProvince['r_name_cn'],
+                'name_en' => $eanProvince['r_name_en'],
+            ];
+        }
+
+        if (!empty($item['province_info'])) {
+            //执行第一种方案：带省信息
+            $poiCity = Data::getZzcCityByNameState($item);
+            if (empty($poiCity)) {
                 //执行第二种方案：不带省信息
                 $poiCity = Data::getZzcCityByName($item);
             }
-            if (empty($poiCity)) {
-                Log::setError($item, '找不到租租车城市数据');
-                return null;
-            }
-
-            if (empty($poiCity['city_id'])) {
-                Log::setError($item, '找到租租车城市数据，但城市ID为空');
-                return null;
-            }
-            dd($poiCity);
-
-//            if (empty($poiCity)) {
-//                //执行第三种方案：通过接口经纬度获取
-//                $poiCity = $dataDbService->getPoiCityByApi($item);
-//                if (empty($poiCity)) {
-//                    $this->setError($item, '通过接口经纬度都获取不到数据');
-//                    return null;
-//                }
-//                if (empty($poiCity['city_id'])) {
-//                    $this->setError($item, '通过接口获取到数据，但城市为空');
-//                    return null;
-//                }
-//            }
-            Log::setError($item, sprintf('通过第%s种方案获得数据', $poiCity['scheme']));
-
-            $item['zzc_city_id'] = $poiCity['city_id'];
-            return $item;
-        })->filter()->values()->toArray();
+        } else {
+            //执行第二种方案：不带省信息
+            $poiCity = Data::getZzcCityByName($item);
+        }
+        if (empty($poiCity) || empty($poiCity['city_id'])) {
+            $this->apiData[] = $item;
+            return null;
+        }
+        if ($poiCity['scheme'] != 1) {
+            $item['province_info'] = [];
+        }
+        Log::setInfo($item, sprintf('通过第%s种方案获得数据', $poiCity['scheme']));
+        $item['zzc_city_id'] = $poiCity['city_id'];
+        return $item;
     }
 
     /**
      * @author  fangjianwei
-     * @throws \Exception
+     * @return array
      */
-    public function handle_temp() {
-        //加载ean城市最小单位数据
-        $this->info('加载ean城市最小单位数据...');
-        $dataService = new Data();
-        $dataDbService = new DataByDb();
-
-
-        //加载ean对应租租车国家表数据
-        $this->info('加载ean对应租租车国家表数据...');
-        $eanZzcRegionLists = $dataService->getEanZzcRegionLists();
-        if (empty($eanZzcRegionLists)) {
-            $this->error('ean对应租租车国家表数据为空！');
-            exit;
-        }
-
-        $eanCityTotal = $dataDbService->getEanCityTotal();
-
-        $limit = 100;
-        $maxPage = ceil($eanCityTotal / $limit);
+    public function getPoiCityByApi() {
+        if (empty($this->apiData)) return [];
+        //通过接口补充数据
+        $this->info('通过接口补充数据...');
+        $limit = 10;
+        $maxPage = count($this->apiData) / $limit;
         $bar = $this->output->createProgressBar($maxPage);
-
+        $returnData = [];
         for ($i = 0; $i < $maxPage; $i++) {
-            //获取此时总数
-            $eanCityLists = $dataDbService->getEanCityLists($i * $limit, $limit);
-            if (empty($eanCityLists)) {
-                $this->error('ean没有城市信息！');
-                exit;
-            }
-
-            $data = collect($eanCityLists)->transform(function($item) use ($eanZzcRegionLists, $dataDbService) {
-                //查到与租租车关联的国家ID
-                $eanZzcRegion = $eanZzcRegionLists[$item['region_id']] ?? null;
-                if (empty($eanZzcRegion)) {
-                    $this->setError($item, '找不到ean与租租车关联国家信息，不执行此条数据');
-                    return null;
-                }
-                $item['zzc_region_id'] = $eanZzcRegion['region_id'];
-                $item['province_name'] = [];
-
-                //查找省名称
-                $eanProvinceLists = $dataDbService->getEanProvince($item);
-                if (empty($eanProvinceLists)) {
-                    $this->setInfo($item, '找不到省数据，执行第二种方案');
-                } else {
-                    //如果多个省，则忽略
-                    if (count($eanProvinceLists) > 1) {
-                        $this->setError($item, '存在多条省数据，不执行此条数据');
-                        return null;
-                    }
-                    $eanProvince = current($eanProvinceLists);
-                    $item['province_name'] = [
-                        'r_id'    => $eanProvince['r_id'],
-                        'name_cn' => $eanProvince['r_name_cn'],
-                        'name_en' => $eanProvince['r_name_en'],
-                    ];
-                }
-                if (!empty($item['province_name'])) {
-                    //执行第一种方案：带省信息
-                    $poiCity = $dataDbService->getPoiCityByNameState($item);
-                    if (empty($poiCity)) {
-                        //执行第二种方案：不带省信息
-                        $poiCity = $dataDbService->getPoiCityByName($item);
-                    }
-                } else {
-                    //执行第二种方案：不带省信息
-                    $poiCity = $dataDbService->getPoiCityByName($item);
-                }
-
+            sleep(1);
+            $data = array_slice($this->apiData, $i * $limit, $limit);
+            $result = $this->_getMulPoiCityByApi($data);
+            $data = collect($data)->transform(function($item) use ($result) {
+                $poiCity = $result[md5($item['center_latitude'] . '_' . $item['center_longitude'])] ?? null;
                 if (empty($poiCity)) {
-                    $this->setError($item, '找不到租租车城市数据');
+                    Log::setError($item, '通过接口经纬度都获取不到数据');
                     return null;
                 }
-
                 if (empty($poiCity['city_id'])) {
-                    $this->setError($item, '找到租租车城市数据，但城市ID为空');
+                    Log::setError($item, '通过接口获取到数据，但城市为空');
                     return null;
                 }
-
-//            if (empty($poiCity)) {
-//                //执行第三种方案：通过接口经纬度获取
-//                $poiCity = $dataDbService->getPoiCityByApi($item);
-//                if (empty($poiCity)) {
-//                    $this->setError($item, '通过接口经纬度都获取不到数据');
-//                    return null;
-//                }
-//                if (empty($poiCity['city_id'])) {
-//                    $this->setError($item, '通过接口获取到数据，但城市为空');
-//                    return null;
-//                }
-//            }
-                $this->setInfo($item, sprintf('通过第%s种方案获得数据', $poiCity['scheme']));
-
                 $item['zzc_city_id'] = $poiCity['city_id'];
+                $item['province_info'] = [];
+                Log::setInfo($item, sprintf('通过第%s种方案获得数据', 3));
                 return $item;
             })->filter()->values()->toArray();
-//            $this->insertData($data);
-            $this->log();
+
+            if(!empty($data)){
+                $returnData  = array_merge($returnData, $data);
+            }
             $bar->advance(1);
         }
-        return;
+        $bar->finish();
+        $this->apiData = [];
+        return $returnData;
+    }
+
+    /**
+     * 通过接口经纬度：第三种方案
+     * @author  fangjianwei
+     * @param array $eanCity
+     * @return array
+     */
+    public function _getMulPoiCityByApi(array $eanCitys): array {
+        $latLngJson = collect($eanCitys)->transform(function($item) {
+            return [
+                'lat' => (float)$item['center_latitude'],
+                'lng' => (float)$item['center_longitude'],
+            ];
+        })->values()->mapToGroups(function($item) {
+            return ['locations' => $item];
+        })->toJson();
+        $i = 0;
+
+        while (true) {
+            $result = CurlHelper::factory('https://map-api.tantu.com/city/get_citys')->setPostRaw(
+                $latLngJson
+            )->setTimeout(5)->setHeaders([
+                'Content-Type' => 'application/json',
+            ])->exec();
+
+            if (empty($result) || $result['status'] != 200) {
+                echo $latLngJson.PHP_EOL;
+                var_dump($result);
+                echo sprintf('调用经纬度接口出错，进行第%d次重试', $i + 1) . PHP_EOL;
+                $i++;
+                continue;
+            }
+
+            $content = json_decode($result['content'], true);
+            if (empty($content) || !is_array($content)) {
+                echo sprintf('调用返回格式有误，进行第%d次重试', $i + 1) . PHP_EOL;
+                $i++;
+                continue;
+            }
+//            if (empty($content['data']) || !is_array($content['data'])) {
+//                echo sprintf('调用返回数据为空：%s，进行第%d次重试', $content['message'], $i + 1) . PHP_EOL;
+//                $i++;
+//                continue;
+//            }
+            return collect($content['data'])->keyBy(function($item) {
+                return md5($item['lat'] . '_' . $item['lng']);
+            })->toArray();
+        }
+        return [];
     }
 
     protected function insertData($data) {
         if (empty($data)) return;
-
+        /**
+         * @var ean_city_tbl $eanCityTbl
+         */
+        $eanCityTbl = app()->make(ean_city_tbl::class);
         $insert = collect($data)->transform(function($item) {
             $format = [
                 'ean_region_id'                => $item['region_id'],
                 'ean_city_id'                  => $item['r_id'],
-                'ean_name_cn'                  => $item['r_name_cn'],
+                'ean_name_cn'                  => $item['temp_name_cn'] ?? $item['r_name_cn'],
                 'ean_name_en'                  => $item['r_name_en'],
                 'lng'                          => $item['center_longitude'],
                 'lat'                          => $item['center_latitude'],
@@ -303,6 +369,7 @@ class PositionDispose extends Command {
                 'ean_province_state_cn'        => '',
                 'ean_province_state_en'        => '',
                 'ean_province_state_region_id' => '',
+                'vicinity_id'                  => $item['vicinity_id'] ?? '',
             ];
             if (!empty($item['province_name'])) {
                 $format = array_merge($format, [
@@ -313,12 +380,7 @@ class PositionDispose extends Command {
             }
             return $format;
         })->toArray();
-        $this->db->table('ean_city_tbl')->insert($insert);
-    }
-
-
-    public function log() {
-        dd($this->infoData);
+        $eanCityTbl->insert($insert);
     }
 
 
