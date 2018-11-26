@@ -7,6 +7,7 @@ use App\Services\Hotel\Position\Redis\Data;
 use App\Services\Hotel\Position\Log;
 use App\Models\MysqlDb\PositionDisposeDb\ean_city_tbl;
 use CurlHelper;
+use App\Models\RedisDb\Hotel\Position;
 
 class PositionDispose extends Command {
     /**
@@ -27,6 +28,7 @@ class PositionDispose extends Command {
 
     protected $apiData = [];
 
+    protected $positionDb;
 
     /**
      * Create a new command instance.
@@ -34,6 +36,8 @@ class PositionDispose extends Command {
      * @return void
      */
     public function __construct() {
+
+        $this->positionDb = app()->make(Position::class);
         parent::__construct();
     }
 
@@ -45,7 +49,7 @@ class PositionDispose extends Command {
      */
     public function handle() {
 
-        $this->init();
+        $this->initData();
         $this->info('开始处理数据...');
 
         $insertData = [];
@@ -77,12 +81,17 @@ class PositionDispose extends Command {
             $newName = trim($newName);
             $data['r_name_cn'] = $newName;
             $data['r_name_en'] = trim($data['r_name_en']);
-            $result = $this->searchCity($data);
-            if (!empty($result)) {
-                $insertData[] = $result;
-            } else {
-                $this->apiData[] = $data;
+            //查找省信息
+            $data = $this->searchRegion($data);
+            if(!empty($data)){
+                $result = $this->searchCity($data);
+                if (!empty($result)) {
+                    $insertData[] = $result;
+                } else {
+                    $this->apiData[] = $data;
+                }
             }
+
         }
         //通过接口补数据
         $result = $this->getPoiCityByApi();
@@ -103,6 +112,7 @@ class PositionDispose extends Command {
     }
 
     /**
+     * 处理最终结果数据
      * @author  fangjianwei
      * @param array $insertData
      */
@@ -142,6 +152,7 @@ class PositionDispose extends Command {
 
 
     /**
+     * 处理城市信息
      * @author  fangjianwei
      * @param array $data
      * @param array $subLists
@@ -153,27 +164,29 @@ class PositionDispose extends Command {
             $item['r_name_cn'] = trim($item['r_name_cn']);
             $Item['r_name_en'] = trim($item['r_name_en']);
             $item['vicinity_id'] = $data['r_id'];
+            //查找省数据
+            $item = $this->searchRegion($item);
+            if(empty($item)) return null;
             return $this->searchCity($item);
         })->filter()->values()->toArray();
         return $data;
     }
 
     /**
-     * 查询城市
+     * 查找省
      * @author  fangjianwei
      * @param array $item
-     * @return array|null
+     * @return array
      */
-    protected function searchCity(array $item) {
+    protected function searchRegion(array $item):?array{
         //查找与租租车关联的国家数据
-
         $eanZzcRegion = Data::getEanZzcRegionByEanRegion((int)$item['region_id']);
         if (empty($eanZzcRegion)) {
             Log::setError($item, '找不到ean与租租车关联国家信息，不执行此条数据');
             return null;
         }
         $item['zzc_region_id'] = $eanZzcRegion['region_id'];
-        $item['province_name'] = [];
+        $item['province_info'] = [];
         //查找省名称
         $eanProvinceLists = Data::getEanProvince($item);
         if (empty($eanProvinceLists)) {
@@ -192,6 +205,17 @@ class PositionDispose extends Command {
                 'name_en' => $eanProvince['r_name_en'],
             ];
         }
+        return $item;
+    }
+
+    /**
+     * 查询城市信息
+     * @author  fangjianwei
+     * @param array $item
+     * @return array|null
+     */
+    protected function searchCity(array $item) {
+
 
         if (!empty($item['province_info'])) {
             //执行第一种方案：带省信息
@@ -217,6 +241,7 @@ class PositionDispose extends Command {
     }
 
     /**
+     * 通过api获取城市信息
      * @author  fangjianwei
      * @return array
      */
@@ -229,7 +254,7 @@ class PositionDispose extends Command {
         $bar = $this->output->createProgressBar($maxPage);
         $returnData = [];
         for ($i = 0; $i < $maxPage; $i++) {
-            sleep(1);
+//            sleep(1);
             $data = array_slice($this->apiData, $i * $limit, $limit);
             $result = $this->_getMulPoiCityByApi($data);
             $data = collect($data)->transform(function($item) use ($result) {
@@ -265,6 +290,22 @@ class PositionDispose extends Command {
      * @return array
      */
     public function _getMulPoiCityByApi(array $eanCitys): array {
+
+        //先查找redis
+        $cacheData = [];
+        $eanCitys = collect($eanCitys)->transform(function($item)use(&$cacheData){
+            $key = md5((float)$item['center_latitude'] . '_' . (float)$item['center_longitude']);
+            $result = $this->positionDb->redisGet($key);
+//            if(!empty($result) && !empty($result['city_id'])){
+            if(!empty($result)){
+                $cacheData[$key] = $result;
+                return null;
+            }
+            return $item;
+        })->filter()->values()->toArray();
+        if(empty($eanCitys)) return $cacheData;
+        //省下的查找接口
+
         $latLngJson = collect($eanCitys)->transform(function($item) {
             return [
                 'lat' => (float)$item['center_latitude'],
@@ -275,6 +316,7 @@ class PositionDispose extends Command {
         })->toJson();
         $i = 0;
 
+        $data = [];
         while (true) {
             $result = CurlHelper::factory('https://map-api.tantu.com/city/get_citys')->setPostRaw(
                 $latLngJson
@@ -301,14 +343,19 @@ class PositionDispose extends Command {
 //                $i++;
 //                continue;
 //            }
-            return collect($content['data'])->keyBy(function($item) {
-                return md5($item['lat'] . '_' . $item['lng']);
+            $data =  collect($content['data'])->keyBy(function($item) {
+                return md5((float)$item['lat'] . '_' . (float)$item['lng']);
+            })->each(function($item, $key){
+                //保存在redis
+                $this->positionDb->redisSet($key, $item);
             })->toArray();
+            break;
         }
-        return [];
+        return array_merge($cacheData, $data);
     }
 
     /**
+     * 数据入库
      * @author  fangjianwei
      * @param $data
      */
@@ -347,10 +394,11 @@ class PositionDispose extends Command {
 
 
     /**
+     * 初始化数据
      * @author  fangjianwei
      * @throws \Exception
      */
-    protected function init() {
+    protected function initData() {
         //加载周边数据
         $this->info('加载ean周边数据...');
         if (!Data::loadPeripheral()) {

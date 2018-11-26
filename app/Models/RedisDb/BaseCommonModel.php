@@ -48,7 +48,7 @@ class BaseCommonModel {
      * @return array|string
      */
     public function redisGet(string $key) {
-        echo sprintf("redis get：%s", $key).PHP_EOL;
+//        echo sprintf("redis get：%s", $key).PHP_EOL;
         $result = $this->db->get($key);
         if (is_null($result)) return null;
         $data = json_decode($result, true);
